@@ -40,7 +40,9 @@ jobs:
       - name: Verify standalone package
         shell: pwsh
         run: |
-          if (!(Test-Path dist/platforms/qwindows.dll)) { throw 'Windows platform plugin missing' }
+          if (!(Test-Path dist/plugins/platforms/qwindows.dll) -and !(Test-Path dist/platforms/qwindows.dll)) {
+            throw 'Windows platform plugin missing'
+          }
           # Verify the package without allowing PATH to provide the installed Qt SDK.
           $env:PATH = "$env:SystemRoot/System32;$env:SystemRoot;$env:SystemRoot/System32/Wbem"
           $env:QT_QPA_PLATFORM = 'windows'
