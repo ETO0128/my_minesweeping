@@ -32,7 +32,11 @@ jobs:
           $process = Start-Process build/Release/complex_minesweeper.exe -ArgumentList '--smoke-test' -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "GUI checks failed: $($process.ExitCode)" }
       - name: Deploy Qt runtime
-        run: cmake --install build --config Release --prefix dist
+        shell: pwsh
+        run: |
+          $prefix = Join-Path $env:GITHUB_WORKSPACE 'dist'
+          cmake --install build --config Release --prefix $prefix
+          if ($LASTEXITCODE -ne 0) { throw 'Qt deployment failed' }
       - name: Verify standalone package
         shell: pwsh
         run: |

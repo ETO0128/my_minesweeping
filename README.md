@@ -26,7 +26,7 @@ C++17 内核 + Qt 6 Widgets 桌面界面，采用经典扫雷的灰色立体方�
 ```bat
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="C:/Qt/6.8.3/msvc2022_64"
 cmake --build build --config Release
-cmake --install build --config Release --prefix dist
+cmake --install build --config Release --prefix "%CD%/dist"
 ```
 
 `dist/complex_minesweeper.exe` 为启动程序。安装步骤会部署 Qt DLL 和平台插件；分发时保留整个 `dist` 目录，可压缩后发送到未安装 Qt 的 Windows 电脑。目标电脑可能需要安装 Microsoft Visual C++ 2015–2022 Redistributable（x64）。
