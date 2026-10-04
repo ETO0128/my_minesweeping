@@ -19,7 +19,7 @@ C++17 内核 + Qt 6 Widgets 桌面界面，采用经典扫雷的灰色立体方�
 
 ## Windows 构建与打包
 
-安装 Qt 6.5 或更新版本，选择 **MSVC 2022 64-bit** 组件，以及 Visual Studio 2022 的“使用 C++ 的桌面开发”和 CMake 工具。
+安装 Qt 6.4 或更新版本，选择 **MSVC 2022 64-bit** 组件，以及 Visual Studio 2022 的“使用 C++ 的桌面开发”和 CMake 工具。
 
 在 **x64 Native Tools Command Prompt for VS 2022** 中进入项目目录，执行（Qt 路径按实际安装版本修改）：
 
@@ -35,7 +35,7 @@ cmake --install build --config Release --prefix dist
 
 ## Linux 构建
 
-需要 CMake、C++17 编译器与 Qt 6.5+ 开发包：
+需要 CMake、C++17 编译器与 Qt 6.4+ 开发包：
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -46,3 +46,20 @@ cmake --build build
 ## 内核接口
 
 `getGrid().grd[row][col]` 存储 `cell` 值，使用 `.` 访问。`reveal()` 返回变化格子的副本。首次 `start()` 保留预先放置的旗帜，后续 `start()` 会重置棋盘；`restart()` 保留布局、清除旗帜并翻开指定位置，该位置未必安全。界面重玩时使用原首次点击位置。
+
+## 自动发布
+
+推送 `v*` 标签会触发 `.github/workflows/windows-release.yml`：在 Windows 2022 上编译，运行 GUI 检查，部署 Qt 运行库，验证独立部署包，最后发布含 ZIP 和 SHA256 校验文件的 GitHub Release。可手动运行工作流只生成构建附件。
+
+```sh
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+## GUI 检查
+
+```sh
+QT_QPA_PLATFORM=offscreen ./build/complex_minesweeper --smoke-test --screenshot /tmp/minesweeping-preview.png
+```
+
+检查覆盖首次翻格、预先插旗与取消、踩雷、胜利、重玩保留布局、计时停止和高级棋盘尺寸。它不能替代人工检查鼠标操作和不同 Windows 显示缩放下的效果。

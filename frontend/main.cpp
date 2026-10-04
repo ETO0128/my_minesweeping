@@ -26,6 +26,8 @@
 #include <cmath>
 #include <functional>
 #include <memory>
+#include <iostream>
+#include <stdexcept>
 #include <vector>
 
 using namespace minesweeping;
@@ -195,6 +197,44 @@ public:
         timer.setInterval(200);
         newGame();
     }
+    // Exercise the same handlers used by the GUI, including end-of-game states.
+    void smokeCheck(const QString &screenshot) {
+        auto require=[](bool ok,const char *message) {
+            if(!ok) throw std::runtime_error(message);
+        };
+        click(8,8,Qt::RightButton);
+        require(game->getGrid().grd[8][8].flg==flag::PLUS_ONE,"Right click flag failed");
+        click(0,0,Qt::LeftButton);
+        require(started && game->getGrid().grd[0][0].val==0.0,"First click was not safe");
+        require(game->getGrid().grd[8][8].flg==flag::PLUS_ONE &&
+                !game->getGrid().grd[8][8].is_revealed,"Pregame flag was not preserved");
+        click(8,8,Qt::RightButton);
+        require(game->getGrid().grd[8][8].flg==flag::NO_FLAG,"Flag removal failed");
+        const auto original=game->getGrid();
+        int mineRow=-1,mineCol=-1;
+        for(const auto &line:original.grd) for(const auto &item:line)
+            if(item.val!=0.0) {mineRow=item.row;mineCol=item.col;}
+        require(mineRow>=0,"No mines generated");
+        click(mineRow,mineCol,Qt::LeftButton);
+        require(game->getState()==status::LOST && !timer.isActive(),"Loss or timer stop failed");
+        replay();
+        require(game->getState()==status::PLAYING && timer.isActive(),"Replay failed");
+        for(const auto &line:original.grd) for(const auto &item:line)
+            require(game->getGrid().grd[item.row][item.col].val==item.val,"Replay changed mine layout");
+        for(const auto &line:original.grd) for(const auto &item:line)
+            if(item.val==0.0) click(item.row,item.col,Qt::LeftButton);
+        require(game->getState()==status::WIN && !timer.isActive(),"Win or timer stop failed");
+        newGame();
+        require(!started && game->getState()==status::PLAYING,"New game failed");
+        rows=16;cols=30;mines=99;newGame();
+        require(board->width()==30*tile && board->height()==16*tile,"Expert board size failed");
+        rows=9;cols=9;mines=10;newGame();
+        click(0,0,Qt::LeftButton);
+        if(!screenshot.isEmpty()) {
+            QApplication::processEvents();
+            require(grab().save(screenshot),"Screenshot save failed");
+        }
+    }
 private:
     void newGame() {
         timer.stop(); started=false; game=std::make_unique<Mine_sweeping>(rows,cols,mines);
@@ -279,5 +319,17 @@ int main(int argc,char **argv) {
     QApplication app(argc,argv);app.setStyle("Fusion");
     app.setApplicationName("Complex Minesweeper");
     app.setStyleSheet("QMainWindow,QDialog,QWidget{background:#c0c0c0;color:#111;} QMenu::item:selected{background:#000080;color:white;} QPushButton{border:2px outset #eee;padding:3px;} QPushButton:pressed{border:2px inset #eee;} QScrollArea{border:3px inset #eee;}");
-    Window window;window.show();return app.exec();
+    Window window;window.show();
+    if(app.arguments().contains("--smoke-test")) {
+        try {
+            const int index=app.arguments().indexOf("--screenshot");
+            window.smokeCheck(index>=0 ? app.arguments().value(index+1) : QString{});
+            std::cout << "GUI smoke checks passed\n";
+            return 0;
+        } catch(const std::exception &error) {
+            std::cerr << error.what() << '\n';
+            return 1;
+        }
+    }
+    return app.exec();
 }
