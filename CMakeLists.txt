@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(ComplexMinesweeper VERSION 1.0 LANGUAGES CXX)
+project(ComplexMinesweeper VERSION 1.0.2 LANGUAGES CXX)
 set(CMAKE_INSTALL_BINDIR "." CACHE PATH "Executable and Qt runtime directory" FORCE)
 include(GNUInstallDirs)
 set(CMAKE_CXX_STANDARD 17)

@@ -55,6 +55,14 @@ void bevel(QPainter &p, QRect r, bool raised) {
 class Board : public QWidget {
 public:
     const Mine_sweeping *game = nullptr;
+    bool normalMode = true;
+    QString clueText(const cell &c) const {
+        if(c.adjacentMineCount==0) return {};
+        if(normalMode) return QString::number(c.adjacentMineCount);
+        const int squared=static_cast<int>(std::norm(c.sum));
+        const int root=static_cast<int>(std::sqrt(squared));
+        return root*root==squared ? QString::number(root) : QString(QChar(0x221a))+QString::number(squared);
+    }
     std::function<void(int,int,Qt::MouseButton)> clicked;
     std::function<void(int,int)> chord;
     explicit Board(QWidget *parent=nullptr) : QWidget(parent) {
@@ -74,7 +82,7 @@ protected:
         const auto &g=game->getGrid();
         const bool lost=game->getState()==status::LOST;
         const bool won=game->getState()==status::WIN;
-        const QColor colors[]={QColor("#0000cc"),QColor("#008000"),QColor("#cc0000"),QColor("#000080"),QColor("#800000"),QColor("#008080")};
+        const QColor colors[]={QColor("#0000cc"),QColor("#008000"),QColor("#cc0000"),QColor("#000080"),QColor("#800000"),QColor("#008080"),QColor("#000000"),QColor("#808080")};
         for (const auto &line:g.grd) for (const auto &c:line) {
             QRect r(c.col*tile,c.row*tile,tile,tile);
             bool mine=c.val!=0.0;
@@ -82,7 +90,7 @@ protected:
                 p.fillRect(r, lost && mine && c.is_revealed ? QColor("#ff3333") : QColor("#c0c0c0"));
                 p.setPen(QColor("#808080")); p.drawRect(r.adjusted(0,0,-1,-1));
                 if (mine) {
-                    const QPoint center=r.center()+QPoint(0,-5);
+                    const QPoint center=r.center()+QPoint(0,normalMode ? 0 : -5);
                     p.setPen(QPen(Qt::black,2));
                     p.drawLine(center+QPoint(-7,0),center+QPoint(7,0));
                     p.drawLine(center+QPoint(0,-7),center+QPoint(0,7));
@@ -90,14 +98,14 @@ protected:
                     p.drawLine(center+QPoint(-5,5),center+QPoint(5,-5));
                     p.fillRect(QRect(center-QPoint(4,4),QSize(9,9)),Qt::black);
                     p.fillRect(QRect(center-QPoint(2,2),QSize(2,2)),Qt::white);
-                    const QString value=c.val.real()!=0 ? (c.val.real()>0?"+1":"-1") : (c.val.imag()>0?"+i":"-i");
-                    p.drawText(r.adjusted(0,15,0,0),Qt::AlignCenter,value);
+                    if(!normalMode) {
+                        const QString value=c.val.real()!=0 ? (c.val.real()>0?"+1":"-1") : (c.val.imag()>0?"+i":"-i");
+                        p.drawText(r.adjusted(0,15,0,0),Qt::AlignCenter,value);
+                    }
                 } else if (c.adjacentMineCount>0) {
-                    const int squared=static_cast<int>(std::norm(c.sum));
-                    const int root=static_cast<int>(std::sqrt(squared));
-                    const QString value=root*root==squared ? QString::number(root) : QString(QChar(0x221a))+QString::number(squared);
-                    p.setPen(colors[std::min(root,5)]);
-                    p.drawText(r,Qt::AlignCenter,value);
+                    const int number=normalMode ? c.adjacentMineCount : static_cast<int>(std::abs(c.sum));
+                    p.setPen(colors[std::clamp(number-1,0,7)]);
+                    p.drawText(r,Qt::AlignCenter,clueText(c));
                 }
             } else {
                 bevel(p,r,true);
@@ -106,7 +114,7 @@ protected:
                     p.fillRect(r.x()+7,r.y()+17,9,2,Qt::black);
                     p.fillRect(r.x()+12,r.y()+5,9,6,QColor("#df0000"));
                     p.setPen(Qt::black);
-                    p.drawText(r.adjusted(0,16,0,0),Qt::AlignCenter,flagText(c.flg));
+                    if(!normalMode) p.drawText(r.adjusted(0,16,0,0),Qt::AlignCenter,flagText(c.flg));
                 }
                 if (lost && c.flg!=flag::NO_FLAG && !mine) {
                     p.setPen(QPen(Qt::red,3));
@@ -136,11 +144,16 @@ class Window : public QMainWindow {
     QElapsedTimer elapsed;
     int rows=9,cols=9,mines=10;
     bool started=false;
+    bool normalMode=true;
     flag selected=flag::PLUS_ONE;
     QAction *replayAction;
     QActionGroup *difficulty;
     std::vector<QAction*> presets;
     QAction *customAction;
+    QAction *normalAction,*complexAction;
+    QMenu *flagMenu;
+    QActionGroup *flagActions;
+    QLabel *hint;
     int firstRow=0,firstCol=0;
 public:
     Window() {
@@ -163,16 +176,32 @@ public:
         connect(customAction,&QAction::triggered,this,[this]{custom();});
         menu->addSeparator();
         connect(menu->addAction(QStringLiteral("退出")),&QAction::triggered,this,&QWidget::close);
-        auto *flags=menuBar()->addMenu(QStringLiteral("旗帜类型"));
-        auto *fg=new QActionGroup(this);
+        auto *modes=menuBar()->addMenu(QStringLiteral("模式"));
+        auto *modeActions=new QActionGroup(this);
+        normalAction=modes->addAction(QStringLiteral("普通扫雷"));
+        complexAction=modes->addAction(QStringLiteral("复数扫雷"));
+        for(auto *action:{normalAction,complexAction}) {action->setCheckable(true);modeActions->addAction(action);}
+        connect(normalAction,&QAction::triggered,this,[this]{setMode(true);});
+        connect(complexAction,&QAction::triggered,this,[this]{setMode(false);});
+        flagMenu=menuBar()->addMenu(QStringLiteral("旗帜类型"));
+        flagActions=new QActionGroup(this);
         for (int i=1;i<=4;++i) {
             const auto type=static_cast<flag>(i);
-            auto *a=flags->addAction(flagText(type)); a->setCheckable(true); fg->addAction(a); a->setChecked(i==1);
+            auto *a=flagMenu->addAction(flagText(type)); a->setCheckable(true); flagActions->addAction(a); a->setChecked(i==1);
             a->setShortcut(QKeySequence(QString::number(i)));
             connect(a,&QAction::triggered,this,[this,type]{selected=type;});
         }
         auto *help=menuBar()->addMenu(QStringLiteral("帮助"));
         connect(help->addAction(QStringLiteral("玩法")),&QAction::triggered,this,[this]{
+            if(normalMode) {
+                QMessageBox::information(this,QStringLiteral("普通扫雷"),QStringLiteral(
+                    "左键翻格，右键插旗或取消。数字表示周围八格中的雷数，空白格自动展开。\n"
+                    "揭示全部安全格即可获胜，首次翻格保证安全。\n\n"
+                    "双击已揭示数字：当周围旗帜数等于数字时，翻开其余邻格。标错位置仍会踩雷。\n"
+                    "F2 或笑脸按钮开始新游戏；重玩本局保留布局。\n"
+                    "可在“模式”菜单切换到复数扫雷；切换模式会开始新游戏。"));
+                return;
+            }
             QMessageBox::information(this,QStringLiteral("复数扫雷"),QStringLiteral(
                 "左键翻格，右键插旗或取消；数字键 1–4 选择旗帜类型。\n"
                 "揭示全部安全格即可获胜，不需要标对雷的种类。首次翻格安全。\n\n"
@@ -191,44 +220,58 @@ public:
         top->addWidget(remaining);top->addStretch();top->addWidget(face);top->addStretch();top->addWidget(clock); layout->addLayout(top);
         board=new Board; board->clicked=[this](int r,int c,Qt::MouseButton b){click(r,c,b);}; board->chord=[this](int r,int c){chord(r,c);};
         auto *scroll=new QScrollArea; scroll->setWidget(board);scroll->setAlignment(Qt::AlignCenter);scroll->setWidgetResizable(false);layout->addWidget(scroll);
-        auto *hint=new QLabel(QStringLiteral("左键翻格 · 右键插旗 · 1–4 选择雷标记 · F2 新游戏")); hint->setWordWrap(true); layout->addWidget(hint);
+        hint=new QLabel; hint->setWordWrap(true); layout->addWidget(hint);
         setCentralWidget(panel);
         connect(&timer,&QTimer::timeout,this,[this]{clock->display(static_cast<int>(std::min<qint64>(999,elapsed.elapsed()/1000)));});
         timer.setInterval(200);
-        newGame();
+        setMode(true);
     }
     // Exercise the same handlers used by the GUI, including end-of-game states.
     void smokeCheck(const QString &screenshot) {
         auto require=[](bool ok,const char *message) {
             if(!ok) throw std::runtime_error(message);
         };
-        click(8,8,Qt::RightButton);
-        require(game->getGrid().grd[8][8].flg==flag::PLUS_ONE,"Right click flag failed");
-        click(0,0,Qt::LeftButton);
-        require(started && game->getGrid().grd[0][0].val==0.0,"First click was not safe");
-        require(game->getGrid().grd[8][8].flg==flag::PLUS_ONE &&
-                !game->getGrid().grd[8][8].is_revealed,"Pregame flag was not preserved");
-        click(8,8,Qt::RightButton);
-        require(game->getGrid().grd[8][8].flg==flag::NO_FLAG,"Flag removal failed");
-        const auto original=game->getGrid();
-        int mineRow=-1,mineCol=-1;
-        for(const auto &line:original.grd) for(const auto &item:line)
-            if(item.val!=0.0) {mineRow=item.row;mineCol=item.col;}
-        require(mineRow>=0,"No mines generated");
-        click(mineRow,mineCol,Qt::LeftButton);
-        require(game->getState()==status::LOST && !timer.isActive(),"Loss or timer stop failed");
-        replay();
-        require(game->getState()==status::PLAYING && timer.isActive(),"Replay failed");
-        for(const auto &line:original.grd) for(const auto &item:line)
-            require(game->getGrid().grd[item.row][item.col].val==item.val,"Replay changed mine layout");
-        for(const auto &line:original.grd) for(const auto &item:line)
-            if(item.val==0.0) click(item.row,item.col,Qt::LeftButton);
-        require(game->getState()==status::WIN && !timer.isActive(),"Win or timer stop failed");
-        newGame();
-        require(!started && game->getState()==status::PLAYING,"New game failed");
-        rows=16;cols=30;mines=99;newGame();
-        require(board->width()==30*tile && board->height()==16*tile,"Expert board size failed");
-        rows=9;cols=9;mines=10;newGame();
+        for(bool normal:{true,false}) {
+            rows=9;cols=9;mines=10;setMode(normal);
+            require(board->normalMode==normal && normalAction->isChecked()==normal,
+                    "Mode selection failed");
+            require(flagMenu->isEnabled()!=normal,"Flag menu availability failed");
+            cell sample;
+            sample.adjacentMineCount=2;
+            require(board->clueText(sample)==(normal ? "2" : "0"),"Clue mode rendering failed");
+            sample.sum={1.0,1.0};
+            require(board->clueText(sample)==(normal ? QString("2") : QString(QChar(0x221a))+"2"),
+                    "Complex magnitude rendering failed");
+            click(8,8,Qt::RightButton);
+            require(game->getGrid().grd[8][8].flg==flag::PLUS_ONE,"Right click flag failed");
+            click(0,0,Qt::LeftButton);
+            require(started && game->getGrid().grd[0][0].val==0.0,"First click was not safe");
+            require(game->getGrid().grd[8][8].flg==flag::PLUS_ONE &&
+                    !game->getGrid().grd[8][8].is_revealed,"Pregame flag was not preserved");
+            click(8,8,Qt::RightButton);
+            require(game->getGrid().grd[8][8].flg==flag::NO_FLAG,"Flag removal failed");
+            const auto original=game->getGrid();
+            int mineRow=-1,mineCol=-1;
+            for(const auto &line:original.grd) for(const auto &item:line)
+                if(item.val!=0.0) {mineRow=item.row;mineCol=item.col;}
+            require(mineRow>=0,"No mines generated");
+            click(mineRow,mineCol,Qt::LeftButton);
+            require(game->getState()==status::LOST && !timer.isActive(),"Loss or timer stop failed");
+            replay();
+            require(game->getState()==status::PLAYING && timer.isActive(),"Replay failed");
+            for(const auto &line:original.grd) for(const auto &item:line)
+                require(game->getGrid().grd[item.row][item.col].val==item.val,"Replay changed mine layout");
+            for(const auto &line:original.grd) for(const auto &item:line)
+                if(item.val==0.0) click(item.row,item.col,Qt::LeftButton);
+            require(game->getState()==status::WIN && !timer.isActive(),"Win or timer stop failed");
+            newGame();
+            require(!started && game->getState()==status::PLAYING,"New game failed");
+            rows=16;cols=30;mines=99;newGame();
+            require(board->width()==30*tile && board->height()==16*tile,"Expert board size failed");
+            checkChord(normal);
+        }
+        rows=9;cols=9;mines=10;setMode(true);
+        require(!started && clock->intValue()==0,"Mode switch did not reset game");
         click(0,0,Qt::LeftButton);
         if(!screenshot.isEmpty()) {
             QApplication::processEvents();
@@ -236,6 +279,61 @@ public:
         }
     }
 private:
+    void checkChord(bool normal) {
+        rows=9;cols=9;mines=10;setMode(normal);
+        game->start(0,0,12345);
+        started=true;firstRow=0;firstCol=0;elapsed.start();timer.start();
+        replayAction->setEnabled(true);
+        const auto layout=game->getGrid();
+        for(const auto &line:layout.grd) for(const auto &center:line) {
+            if(center.val!=0.0 || center.adjacentMineCount==0) continue;
+            // Use a clue whose ordinary count differs from its complex magnitude.
+            if(normal && std::norm(center.sum)==center.adjacentMineCount*center.adjacentMineCount)
+                continue;
+            std::vector<cell> neighboringMines,coveredSafe;
+            for(int dr=-1;dr<=1;++dr) for(int dc=-1;dc<=1;++dc) {
+                const int r=center.row+dr,c=center.col+dc;
+                if((dr==0 && dc==0)||r<0||r>=rows||c<0||c>=cols) continue;
+                const auto item=game->getGrid().grd[r][c];
+                if(item.val!=0.0) neighboringMines.push_back(item);
+                else if(!item.is_revealed) coveredSafe.push_back(item);
+            }
+            if(coveredSafe.empty()) continue;
+            click(center.row,center.col,Qt::LeftButton);
+            // No flags must leave the covered neighbors untouched.
+            const auto before=game->getGrid();
+            chord(center.row,center.col);
+            for(const auto &item:coveredSafe)
+                if(game->getGrid().grd[item.row][item.col].is_revealed!=before.grd[item.row][item.col].is_revealed)
+                    throw std::runtime_error("Chord expanded without matching flags");
+            for(const auto &item:neighboringMines) {
+                selected=item.val.real()>0 ? flag::PLUS_ONE : item.val.real()<0 ? flag::NEG_ONE :
+                         item.val.imag()>0 ? flag::PLUS_I : flag::NEG_I;
+                click(item.row,item.col,Qt::RightButton);
+            }
+            chord(center.row,center.col);
+            for(const auto &item:coveredSafe)
+                if(!game->getGrid().grd[item.row][item.col].is_revealed)
+                    throw std::runtime_error("Chord failed to reveal safe neighbor");
+            if(game->getState()==status::LOST)
+                throw std::runtime_error("Correct chord hit a mine");
+            selected=flag::PLUS_ONE;
+            return;
+        }
+        throw std::runtime_error("Could not find a numbered cell for chord checks");
+    }
+    void setMode(bool normal) {
+        normalMode=normal;
+        board->normalMode=normal;
+        normalAction->setChecked(normal);
+        complexAction->setChecked(!normal);
+        flagMenu->setEnabled(!normal);
+        for(auto *action:flagActions->actions()) action->setEnabled(!normal);
+        setWindowTitle(normal ? QStringLiteral("普通扫雷 · v1.0.2") : QStringLiteral("复数扫雷 · v1.0.2"));
+        hint->setText(normal ? QStringLiteral("左键翻格 · 右键插旗 · 双击数字展开 · F2 新游戏")
+                             : QStringLiteral("左键翻格 · 右键插旗 · 1–4 选择雷标记 · F2 新游戏"));
+        newGame();
+    }
     void newGame() {
         timer.stop(); started=false; game=std::make_unique<Mine_sweeping>(rows,cols,mines);
         remaining->setDigitCount(rows*cols>999 ? 5 : 3);
@@ -263,7 +361,7 @@ private:
         if(game->getState()!=status::PLAYING) return;
         const auto &cell=game->getGrid().grd[r][c];
         if(button==Qt::RightButton) {
-            game->setFlag(r,c,cell.flg==flag::NO_FLAG?selected:flag::NO_FLAG);
+            game->setFlag(r,c,cell.flg==flag::NO_FLAG?(normalMode ? flag::PLUS_ONE : selected):flag::NO_FLAG);
         } else if(button==Qt::LeftButton) {
             if(cell.is_revealed || cell.flg!=flag::NO_FLAG) return;
             if(!started) {
@@ -292,7 +390,9 @@ private:
             default: if(!item.is_revealed) neighbors.emplace_back(nr,nc);break;
             }
         }
-        if(count==0 || std::norm(sum)!=std::norm(center.sum)) return;
+        if(normalMode) {
+            if(count!=center.adjacentMineCount) return;
+        } else if(count==0 || std::norm(sum)!=std::norm(center.sum)) return;
         for(const auto &[nr,nc]:neighbors) {
             game->reveal(nr,nc);
             if(game->getState()!=status::PLAYING) break;

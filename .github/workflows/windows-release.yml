@@ -72,5 +72,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create $env:RELEASE_TAG complex-minesweeper-windows-x64.zip SHA256SUMS.txt --verify-tag --title "复数扫雷 $env:RELEASE_TAG" --notes-file .github/release-notes.md
+          gh release create $env:RELEASE_TAG complex-minesweeper-windows-x64.zip SHA256SUMS.txt --verify-tag --title "扫雷 $env:RELEASE_TAG" --notes-file .github/release-notes.md
           if ($LASTEXITCODE -ne 0) { throw 'Release publishing failed' }
